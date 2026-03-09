@@ -1,0 +1,185 @@
+############################################################
+# CLINICAL TRIAL TFL AUTOMATION PROJECT
+############################################################
+
+packages <- c("dplyr","tidyr","ggplot2","flextable","officer","shiny")
+
+installed <- packages %in% installed.packages()
+
+if(any(!installed)){
+  install.packages(packages[!installed])
+}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(flextable)
+library(officer)
+library(shiny)
+
+dir.create("output", showWarnings = FALSE)
+dir.create("output/tables", showWarnings = FALSE)
+dir.create("output/figures", showWarnings = FALSE)
+
+set.seed(123)
+
+############################################################
+# CREATE DATASETS
+############################################################
+
+adsl <- data.frame(
+  USUBJID=paste0("SUBJ",1:30),
+  TRT01A=sample(c("Placebo","Drug A"),30,TRUE),
+  AGE=sample(25:70,30),
+  SEX=sample(c("M","F"),30,TRUE),
+  RACE=sample(c("White","Asian","Black"),30,TRUE)
+)
+
+visits=c("Baseline","Week 4")
+
+adlb <- expand.grid(
+  USUBJID=adsl$USUBJID,
+  AVISIT=visits
+)
+
+adlb <- adlb %>%
+  left_join(adsl %>% select(USUBJID,TRT01A),by="USUBJID") %>%
+  mutate(PARAM="Hemoglobin",
+         AVAL=round(rnorm(n(),13.5,1),1))
+
+adae <- data.frame(
+  USUBJID=sample(adsl$USUBJID,50,TRUE),
+  TRT01A=sample(c("Placebo","Drug A"),50,TRUE),
+  AEDECOD=sample(c("Headache","Nausea","Fatigue"),50,TRUE),
+  AESER=sample(c("Y","N"),50,TRUE),
+  AESEV=sample(c("Mild","Moderate","Severe"),50,TRUE)
+)
+
+############################################################
+# DEMOGRAPHIC TABLE
+############################################################
+
+demo_table <- adsl %>%
+  group_by(TRT01A) %>%
+  summarise(
+    N=n(),
+    Mean_Age=round(mean(AGE),1),
+    SD_Age=round(sd(AGE),1)
+  )
+
+############################################################
+# LAB SUMMARY
+############################################################
+
+lab_summary <- adlb %>%
+  group_by(TRT01A,AVISIT) %>%
+  summarise(
+    N=n(),
+    Mean=round(mean(AVAL),2),
+    SD=round(sd(AVAL),2),
+    Min=min(AVAL),
+    Max=max(AVAL),
+    .groups="drop"
+  )
+
+############################################################
+# SHIFT TABLE
+############################################################
+
+baseline <- adlb %>%
+  filter(AVISIT=="Baseline") %>%
+  select(USUBJID,BASE=AVAL)
+
+week4 <- adlb %>%
+  filter(AVISIT=="Week 4") %>%
+  select(USUBJID,WEEK4=AVAL)
+
+shift <- baseline %>%
+  inner_join(week4,by="USUBJID") %>%
+  mutate(BASE_CAT=ifelse(BASE<13,"Low","Normal"),
+         POST_CAT=ifelse(WEEK4<13,"Low","Normal"))
+
+shift_table <- shift %>%
+  count(BASE_CAT,POST_CAT)
+
+############################################################
+# AE TABLE
+############################################################
+
+ae_table <- adae %>%
+  group_by(TRT01A,AEDECOD) %>%
+  summarise(
+    Subjects=n_distinct(USUBJID),
+    Events=n(),
+    .groups="drop"
+  )
+
+############################################################
+# PLOT
+############################################################
+
+plot <- ggplot(adlb,aes(x=AVISIT,y=AVAL,group=USUBJID))+
+  geom_line()+
+  geom_point()+
+  facet_wrap(~TRT01A)+
+  theme_minimal()
+
+ggsave("output/figures/lab_trend.png",plot,width=8,height=5)
+plot
+
+############################################################
+# WORD REPORT
+############################################################
+
+doc <- read_docx() %>%
+  body_add_par("Clinical Trial Report",style="heading 1") %>%
+  body_add_par("Demographic Table",style="heading 2") %>%
+  body_add_flextable(flextable(demo_table)) %>%
+  body_add_par("Lab Summary Table",style="heading 2") %>%
+  body_add_flextable(flextable(lab_summary)) %>%
+  body_add_par("Shift Table",style="heading 2") %>%
+  body_add_flextable(flextable(shift_table)) %>%
+  body_add_par("Adverse Event Table",style="heading 2") %>%
+  body_add_flextable(flextable(ae_table))
+
+print(doc,target="output/tables/clinical_report.docx")
+doc
+
+############################################################
+# SHINY DASHBOARD
+############################################################
+
+ui <- fluidPage(
+  titlePanel("Clinical Trial Dashboard"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("visit","Visit",
+                  choices=unique(adlb$AVISIT))
+    ),
+    mainPanel(
+      plotOutput("labplot"),
+      tableOutput("aetable")
+    )
+  )
+)
+
+server <- function(input,output){
+  
+  output$labplot <- renderPlot({
+    
+    data <- adlb %>%
+      filter(AVISIT==input$visit)
+    
+    ggplot(data,aes(x=TRT01A,y=AVAL,fill=TRT01A))+
+      geom_boxplot()+
+      theme_minimal()
+    
+  })
+  
+  output$aetable <- renderTable({
+    ae_table
+  })
+}
+
+cat("Clinical TFL Generation Completed\n")
+shinyApp(ui,server)
