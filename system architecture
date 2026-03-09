@@ -1,0 +1,31 @@
+   The architecture of the system illustrates the flow of clinical data from input datasets to final outputs, including automated tables, visualizations, reports, and dashboards.       Clinical Trial Datasets
+        (ADSL, ADLB, ADAE CSV Files)
+                     │
+                     │
+                     ▼
+           Data Loading and Cleaning
+               (R Data Processing)
+                     │
+                     │
+                     ▼
+          Data Transformation & Analysis
+          (dplyr, tidyr statistical summaries)
+                     │
+                     │
+                     ▼
+           TFL Generation Pipeline
+     (Demographic, Lab, AE, Shift Tables)
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+        ▼            ▼            ▼
+   Visualization   Report      Dashboard
+   (ggplot2)      Generation      (Shiny)
+                  (flextable,
+                   officer)
+        │            │            │
+        └────────────┼────────────┘
+                     ▼
+              Final Outputs
+      (Tables, Figures, Word Reports,
+          Interactive Dashboard)
